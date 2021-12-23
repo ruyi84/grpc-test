@@ -2,38 +2,26 @@ package main
 
 import (
 	"flag"
-	"fmt"
-	"github.com/bojand/ghz/runner"
 	"github.com/fullstorydev/grpcurl"
 	"github.com/json-iterator/go"
+	"grpc-test/handle"
 	"grpc-test/parse"
-	"io/ioutil"
 	"os"
 )
-
-type Value struct {
-	Name      string
-	ValueType parse.FieldType
-	Default   interface{}
-}
-
-type Test struct {
-	MethodName string
-	Value      []Value
-}
-
-type StdinJson struct {
-	MethodNafme string
-	Value       map[string]interface{}
-}
 
 var operation string // 操作类型：输出解析文件，交互式，参数命令式
 var intPath string
 var outPath string
+var protoFile string
+var serviceName string
+var host string
 
 func init() {
 	flag.StringVar(&operation, "operation", "", "Input your type of operation.")
-	flag.StringVar(&intPath, "intPath", "", "Input your type of input path.")
+	flag.StringVar(&serviceName, "serviceName", "", "Input your serviceName.")
+	flag.StringVar(&host, "host", "", "Input your host.")
+	flag.StringVar(&protoFile, "protoFile", "", "Input your type of input path.")
+	flag.StringVar(&intPath, "intPath", "", "Input your protoFile.")
 	flag.StringVar(&outPath, "outPath", "", "Input your type of output path.")
 
 }
@@ -44,53 +32,10 @@ func main() {
 
 	switch operation {
 	case "parseProto":
-	case "ghz":
-	}
-
-	// 解析proto，获取对应的接口列表和参数列表
-	parseJson(intPath, outPath)
-
-}
-
-func ghz(protoFile, intFile, callName, host string) {
-
-	readFile, err := ioutil.ReadFile(intFile)
-	if err != nil {
-		panic(err)
-	}
-
-	var stdinList []StdinJson
-	err = jsoniter.Unmarshal(readFile, &stdinList)
-	if err != nil {
-		panic(err)
-	}
-
-	for _, jsonInfo := range stdinList {
-		reqInfo, err := jsoniter.MarshalToString(jsonInfo.Value)
-		if err != nil {
-			panic(err)
-		}
-
-		callName := fmt.Sprintf("%s.%s", callName, jsonInfo.MethodNafme)
-		report, err := runner.Run(
-			callName,
-			host,
-			runner.WithProtoFile(protoFile, []string{}),
-			runner.WithDataFromJSON(reqInfo),
-			runner.WithInsecure(true),
-			//runner.WithMetadataFromJSON(`{"authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2Mzg0NTA0OTUsInByaXYiOjEsInJvbGUiOiJtZ3IiLCJ1c2VyIjoibGluIn0.mPICgvgBxFnLsQHJlULWu31ckBkuIY559PHEJobsqYU"}`),
-		)
-
-		if err != nil {
-			panic(err)
-		}
-
-		json, err := report.MarshalJSON()
-		if err != nil {
-			panic(err)
-		}
-
-		fmt.Println(string(json))
+		// 解析proto，获取对应的接口列表和参数列表
+		parseJson(intPath, outPath)
+	case "ghz": // 倒入protoFile和对应的parseFile，然后遍历执行所有的请求，并且输出对应的测试结果
+		handle.CallGHZ(protoFile, intPath, serviceName, host)
 	}
 
 }
@@ -106,18 +51,18 @@ func parseJson(filePath, outPath string) {
 		panic(err)
 	}
 
-	var list []Test
-	var stdinList []StdinJson
+	var list []handle.Test
+	var stdinList []handle.StdinJson
 	for _, method := range methods {
 		r, err := parse.GatherMetadataForMethod(method)
 		if err != nil {
 			panic(err)
 		}
-		var valueList []Value
+		var valueList []handle.Value
 		valueMap := make(map[string]interface{})
 		for _, v := range r.MessageTypes {
 			for _, def := range v {
-				valueList = append(valueList, Value{
+				valueList = append(valueList, handle.Value{
 					Name:      def.Name,
 					ValueType: def.Type,
 					Default:   def.DefaultVal,
@@ -126,18 +71,18 @@ func parseJson(filePath, outPath string) {
 			}
 
 		}
-		list = append(list, Test{
+		list = append(list, handle.Test{
 			MethodName: method.GetName(),
 			Value:      valueList,
 		})
 
-		stdinList = append(stdinList, StdinJson{
+		stdinList = append(stdinList, handle.StdinJson{
 			MethodNafme: method.GetName(),
 			Value:       valueMap,
 		})
 	}
 
-	indent, err := jsoniter.MarshalIndent(stdinList, "", "	")
+	indent, err := jsoniter.MarshalIndent(stdinList, "", "    ")
 	if err != nil {
 		panic(err)
 	}
