@@ -1,14 +1,18 @@
 package handle
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"github.com/bojand/ghz/runner"
 	jsoniter "github.com/json-iterator/go"
+	"grpc-test/module"
+	"io/ioutil"
 )
 
 type StdinJson struct {
-	MethodNafme string
-	Value       map[string]interface{}
+	MethodName string
+	Value      map[string]interface{}
 }
 
 // callGhz
@@ -17,8 +21,10 @@ func CallGHZ(protoFile, paramFile, callName, host string) {
 
 	for _, test := range testList {
 		input := StdinJson{
-			MethodNafme: test.MethodName,
+			MethodName: test.MethodName,
 		}
+
+		input.Value = make(map[string]interface{})
 		for _, value := range test.Value {
 			input.Value[value.Name] = value.Default
 		}
@@ -35,24 +41,36 @@ func ghz(protoFile, callName, methodName, host string, jsonInfo StdinJson) {
 	}
 
 	callName = fmt.Sprintf("%s.%s", callName, methodName)
+	if module.Token != "" {
+		runner.WithMetadataFromJSON(fmt.Sprintf(`{"authorization":"Bearer %s"}`, module.Token))
+	} else {
+
+	}
 	report, err := runner.Run(
 		callName,
 		host,
 		runner.WithProtoFile(protoFile, []string{}),
 		runner.WithDataFromJSON(reqInfo),
 		runner.WithInsecure(true),
-		//runner.WithMetadataFromJSON(`{"authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2Mzg0NTA0OTUsInByaXYiOjEsInJvbGUiOiJtZ3IiLCJ1c2VyIjoibGluIn0.mPICgvgBxFnLsQHJlULWu31ckBkuIY559PHEJobsqYU"}`),
 	)
 
 	if err != nil {
 		panic(err)
 	}
 
-	json, err := report.MarshalJSON()
+	marshalJSON, err := report.MarshalJSON()
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(string(json))
+	var result bytes.Buffer
+	err = json.Indent(&result, marshalJSON, "", " ")
+	if err != nil {
+		panic(err)
+	}
 
+	err = ioutil.WriteFile(module.OutPath, result.Bytes(), 0666)
+	if err != nil {
+		panic(err)
+	}
 }
